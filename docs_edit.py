@@ -713,12 +713,30 @@ def get(doc_id: str) -> dict:
     }
 
 
+def _execute_batch_update(
+    service, doc_id: str, requests: list[dict], suggest: bool = False
+) -> dict:
+    """
+    Run documents().batchUpdate() for `requests`, optionally as suggested edits.
+
+    When `suggest` is True, sets writeControl.writeMode=SUGGEST so the changes
+    land as Suggesting-mode edits (Google's "track changes" equivalent) instead
+    of being applied directly. This is a Docs API Developer Preview feature —
+    see https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate#writemode
+    """
+    body = {"requests": requests}
+    if suggest:
+        body["writeControl"] = {"writeMode": "SUGGEST"}
+    return service.documents().batchUpdate(documentId=doc_id, body=body).execute()
+
+
 def search_replace(
     doc_id: str,
     find: str,
     replace: str,
     occurrence: int = 1,
     regex: bool = False,
+    suggest: bool = False,
 ) -> dict:
     """
     Find text in a document and replace a specific occurrence.
@@ -729,6 +747,8 @@ def search_replace(
         replace:    Replacement text
         occurrence: Which occurrence to replace (1-based). 0 = replace all.
         regex:      Treat `find` as a regular expression
+        suggest:    If True, apply as a Suggesting-mode edit (Developer Preview
+                    Docs API feature) instead of a direct edit.
 
     Returns:
         {"ok": True, "replaced": "old text", "at_index": 45, "occurrences_found": 3}
@@ -737,17 +757,17 @@ def search_replace(
 
     # Replace-all: use the native replaceAllText API (fast, atomic)
     if occurrence == 0 and not regex:
-        result = service.documents().batchUpdate(
-            documentId=doc_id,
-            body={
-                "requests": [{
-                    "replaceAllText": {
-                        "containsText": {"text": find, "matchCase": True},
-                        "replaceText": replace,
-                    }
-                }]
-            },
-        ).execute()
+        result = _execute_batch_update(
+            service,
+            doc_id,
+            [{
+                "replaceAllText": {
+                    "containsText": {"text": find, "matchCase": True},
+                    "replaceText": replace,
+                }
+            }],
+            suggest=suggest,
+        )
         count = (
             result.get("replies", [{}])[0]
             .get("replaceAllText", {})
@@ -814,10 +834,7 @@ def search_replace(
             }
         })
 
-    service.documents().batchUpdate(
-        documentId=doc_id,
-        body={"requests": requests},
-    ).execute()
+    _execute_batch_update(service, doc_id, requests, suggest=suggest)
 
     return {
         "ok": True,
@@ -827,11 +844,15 @@ def search_replace(
     }
 
 
-def insert_after(doc_id: str, anchor: str, text: str, rich: bool = True) -> dict:
+def insert_after(
+    doc_id: str, anchor: str, text: str, rich: bool = True, suggest: bool = False
+) -> dict:
     """
     Insert text as a new paragraph after the paragraph containing `anchor`.
 
     The inserted text becomes a separate paragraph (newline appended automatically).
+
+    suggest: If True, apply as a Suggesting-mode edit instead of a direct edit.
     """
     service = _get_service("docs", "v1")
     doc = _get_document(service, doc_id)
@@ -855,10 +876,7 @@ def insert_after(doc_id: str, anchor: str, text: str, rich: bool = True) -> dict
         prefix="\n",
         rich=rich,
     )
-    service.documents().batchUpdate(
-        documentId=doc_id,
-        body={"requests": requests},
-    ).execute()
+    _execute_batch_update(service, doc_id, requests, suggest=suggest)
 
     return {
         "ok": True,
@@ -869,9 +887,13 @@ def insert_after(doc_id: str, anchor: str, text: str, rich: bool = True) -> dict
     }
 
 
-def insert_before(doc_id: str, anchor: str, text: str, rich: bool = True) -> dict:
+def insert_before(
+    doc_id: str, anchor: str, text: str, rich: bool = True, suggest: bool = False
+) -> dict:
     """
     Insert text as a new paragraph before the paragraph containing `anchor`.
+
+    suggest: If True, apply as a Suggesting-mode edit instead of a direct edit.
     """
     service = _get_service("docs", "v1")
     doc = _get_document(service, doc_id)
@@ -895,10 +917,7 @@ def insert_before(doc_id: str, anchor: str, text: str, rich: bool = True) -> dic
         suffix="\n",
         rich=rich,
     )
-    service.documents().batchUpdate(
-        documentId=doc_id,
-        body={"requests": requests},
-    ).execute()
+    _execute_batch_update(service, doc_id, requests, suggest=suggest)
 
     return {
         "ok": True,
@@ -909,12 +928,14 @@ def insert_before(doc_id: str, anchor: str, text: str, rich: bool = True) -> dic
     }
 
 
-def delete_paragraph(doc_id: str, anchor: str) -> dict:
+def delete_paragraph(doc_id: str, anchor: str, suggest: bool = False) -> dict:
     """
     Delete the paragraph(s) containing `anchor` text.
 
     Deletes ALL paragraphs matching the anchor (case-insensitive substring).
     Returns count of deleted paragraphs.
+
+    suggest: If True, apply as a Suggesting-mode edit instead of a direct edit.
     """
     service = _get_service("docs", "v1")
     doc = _get_document(service, doc_id)
@@ -938,10 +959,7 @@ def delete_paragraph(doc_id: str, anchor: str) -> dict:
             }
         })
 
-    service.documents().batchUpdate(
-        documentId=doc_id,
-        body={"requests": requests},
-    ).execute()
+    _execute_batch_update(service, doc_id, requests, suggest=suggest)
 
     return {
         "ok": True,
@@ -950,9 +968,11 @@ def delete_paragraph(doc_id: str, anchor: str) -> dict:
     }
 
 
-def append(doc_id: str, text: str, rich: bool = True) -> dict:
+def append(doc_id: str, text: str, rich: bool = True, suggest: bool = False) -> dict:
     """
     Append text as a new paragraph at the end of the document.
+
+    suggest: If True, apply as a Suggesting-mode edit instead of a direct edit.
     """
     service = _get_service("docs", "v1")
     doc = _get_document(service, doc_id)
@@ -973,10 +993,7 @@ def append(doc_id: str, text: str, rich: bool = True) -> dict:
         prefix="\n",
         rich=rich,
     )
-    service.documents().batchUpdate(
-        documentId=doc_id,
-        body={"requests": requests},
-    ).execute()
+    _execute_batch_update(service, doc_id, requests, suggest=suggest)
 
     return {
         "ok": True,
@@ -987,7 +1004,9 @@ def append(doc_id: str, text: str, rich: bool = True) -> dict:
     }
 
 
-def batch_replace(doc_id: str, replacements: list[dict]) -> dict:
+def batch_replace(
+    doc_id: str, replacements: list[dict], suggest: bool = False
+) -> dict:
     """
     Apply multiple find→replace operations atomically (all or nothing).
 
@@ -998,6 +1017,8 @@ def batch_replace(doc_id: str, replacements: list[dict]) -> dict:
         doc_id:       Google Doc ID
         replacements: List of {"find": "...", "replace": "...", "occurrence": 1}
                       `occurrence` defaults to 1. Use 0 for replace-all.
+        suggest:      If True, apply as Suggesting-mode edits instead of direct
+                      edits.
 
     Returns:
         {"ok": True, "applied": N, "changes": [...]}
@@ -1074,10 +1095,7 @@ def batch_replace(doc_id: str, replacements: list[dict]) -> dict:
                 }
             })
 
-    service.documents().batchUpdate(
-        documentId=doc_id,
-        body={"requests": requests},
-    ).execute()
+    _execute_batch_update(service, doc_id, requests, suggest=suggest)
 
     return {
         "ok": True,
@@ -1259,6 +1277,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sr.add_argument("--replace", required=True)
     sr.add_argument("--occurrence", type=int, default=1, help="Which occurrence (1=first, 0=all)")
     sr.add_argument("--regex", action="store_true")
+    sr.add_argument("--suggest", action="store_true", help="Apply as a Suggesting-mode edit instead of a direct edit")
 
     # insert_after
     ia = sub.add_parser("insert_after", help="Insert paragraph after anchor")
@@ -1267,6 +1286,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ia.add_argument("--text", required=True)
     ia.set_defaults(rich=True)
     ia.add_argument("--plain", dest="rich", action="store_false", help="Insert literal text without rich formatting")
+    ia.add_argument("--suggest", action="store_true", help="Apply as a Suggesting-mode edit instead of a direct edit")
 
     # insert_before
     ib = sub.add_parser("insert_before", help="Insert paragraph before anchor")
@@ -1275,11 +1295,13 @@ def _build_parser() -> argparse.ArgumentParser:
     ib.add_argument("--text", required=True)
     ib.set_defaults(rich=True)
     ib.add_argument("--plain", dest="rich", action="store_false", help="Insert literal text without rich formatting")
+    ib.add_argument("--suggest", action="store_true", help="Apply as a Suggesting-mode edit instead of a direct edit")
 
     # delete_paragraph
     dp = sub.add_parser("delete_paragraph", help="Delete paragraph(s) matching anchor")
     dp.add_argument("doc_id")
     dp.add_argument("--anchor", required=True)
+    dp.add_argument("--suggest", action="store_true", help="Apply as a Suggesting-mode edit instead of a direct edit")
 
     # append
     ap = sub.add_parser("append", help="Append text to end of document")
@@ -1287,6 +1309,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--text", required=True)
     ap.set_defaults(rich=True)
     ap.add_argument("--plain", dest="rich", action="store_false", help="Insert literal text without rich formatting")
+    ap.add_argument("--suggest", action="store_true", help="Apply as a Suggesting-mode edit instead of a direct edit")
 
     # batch_replace
     br = sub.add_parser("batch_replace", help="Multiple replacements (atomic)")
@@ -1296,6 +1319,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help='JSON array: [{"find":"...","replace":"...","occurrence":1}]',
     )
+    br.add_argument("--suggest", action="store_true", help="Apply as Suggesting-mode edits instead of direct edits")
 
     # add_comment
     ac = sub.add_parser("add_comment", help="Add a comment anchored to specific text")
@@ -1331,19 +1355,24 @@ def main():
             result = get(args.doc_id)
         elif args.command == "search_replace":
             result = search_replace(
-                args.doc_id, args.find, args.replace, args.occurrence, args.regex
+                args.doc_id, args.find, args.replace, args.occurrence, args.regex,
+                suggest=args.suggest,
             )
         elif args.command == "insert_after":
-            result = insert_after(args.doc_id, args.anchor, args.text, rich=args.rich)
+            result = insert_after(
+                args.doc_id, args.anchor, args.text, rich=args.rich, suggest=args.suggest
+            )
         elif args.command == "insert_before":
-            result = insert_before(args.doc_id, args.anchor, args.text, rich=args.rich)
+            result = insert_before(
+                args.doc_id, args.anchor, args.text, rich=args.rich, suggest=args.suggest
+            )
         elif args.command == "delete_paragraph":
-            result = delete_paragraph(args.doc_id, args.anchor)
+            result = delete_paragraph(args.doc_id, args.anchor, suggest=args.suggest)
         elif args.command == "append":
-            result = append(args.doc_id, args.text, rich=args.rich)
+            result = append(args.doc_id, args.text, rich=args.rich, suggest=args.suggest)
         elif args.command == "batch_replace":
             replacements = json.loads(args.replacements)
-            result = batch_replace(args.doc_id, replacements)
+            result = batch_replace(args.doc_id, replacements, suggest=args.suggest)
         elif args.command == "add_comment":
             result = add_comment(
                 args.doc_id,

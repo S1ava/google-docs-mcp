@@ -9,6 +9,11 @@ LLMs describe WHAT they want to change; the server figures out WHERE.
 All edits use real batchUpdate — version history, comments, and
 suggestions are preserved.
 
+All editing tools accept an optional `suggest=True` to apply the change as a
+Suggesting-mode edit (Google Docs' track-changes equivalent, reviewable by the
+document owner) instead of editing directly. Uses the Docs API's
+writeControl.writeMode=SUGGEST, currently a Developer Preview feature.
+
 Tools:
   Editing:  docs_get, docs_search_replace, docs_insert_after,
             docs_insert_before, docs_delete_paragraph, docs_append,
@@ -83,6 +88,9 @@ TYPICAL WORKFLOW:
 
 All edits preserve version history. Use short, distinctive anchor_text
 (a few unique words) for reliable text matching.
+
+Pass suggest=True on any editing tool to propose the change as a reviewable
+Suggesting-mode edit instead of applying it directly.
 """.strip(),
 )
 
@@ -109,6 +117,7 @@ def docs_search_replace(
     replace: str,
     occurrence: int = 1,
     regex: bool = False,
+    suggest: bool = False,
 ) -> str:
     """
     Find text in a Google Doc and replace a specific occurrence.
@@ -122,16 +131,22 @@ def docs_search_replace(
         occurrence: Which occurrence to replace. 1 = first (default), 2 = second,
                     0 = replace ALL occurrences.
         regex:      If True, treat `find` as a Python regular expression
+        suggest:    If True, apply as a Suggesting-mode edit (Google Docs'
+                    track-changes equivalent) that the document owner reviews,
+                    instead of editing directly. Requires the Docs API
+                    writeMode=SUGGEST Developer Preview feature.
 
     Returns:
         JSON with: ok, replaced (original text), at_index, occurrences_found
     """
-    result = docs_edit.search_replace(doc_id, find, replace, occurrence, regex)
+    result = docs_edit.search_replace(doc_id, find, replace, occurrence, regex, suggest=suggest)
     return json.dumps(result, indent=2)
 
 
 @mcp.tool
-def docs_insert_after(doc_id: str, anchor: str, text: str, rich: bool = True) -> str:
+def docs_insert_after(
+    doc_id: str, anchor: str, text: str, rich: bool = True, suggest: bool = False
+) -> str:
     """
     Insert a new paragraph immediately after the paragraph containing `anchor`.
 
@@ -146,20 +161,23 @@ def docs_insert_after(doc_id: str, anchor: str, text: str, rich: bool = True) ->
       - **bold**, *italic*, ***bold italic***
 
     Args:
-        doc_id: Google Doc ID
-        anchor: Text to search for to find the target paragraph
-        text:   Text to insert as the new paragraph
-        rich:   If True (default), interpret simple markdown-like formatting natively
+        doc_id:  Google Doc ID
+        anchor:  Text to search for to find the target paragraph
+        text:    Text to insert as the new paragraph
+        rich:    If True (default), interpret simple markdown-like formatting natively
+        suggest: If True, apply as a Suggesting-mode edit instead of a direct edit.
 
     Returns:
         JSON with: ok, inserted_after (matched paragraph preview), at_index
     """
-    result = docs_edit.insert_after(doc_id, anchor, text, rich=rich)
+    result = docs_edit.insert_after(doc_id, anchor, text, rich=rich, suggest=suggest)
     return json.dumps(result, indent=2)
 
 
 @mcp.tool
-def docs_insert_before(doc_id: str, anchor: str, text: str, rich: bool = True) -> str:
+def docs_insert_before(
+    doc_id: str, anchor: str, text: str, rich: bool = True, suggest: bool = False
+) -> str:
     """
     Insert a new paragraph immediately before the paragraph containing `anchor`.
 
@@ -174,20 +192,21 @@ def docs_insert_before(doc_id: str, anchor: str, text: str, rich: bool = True) -
       - **bold**, *italic*, ***bold italic***
 
     Args:
-        doc_id: Google Doc ID
-        anchor: Text to search for to find the target paragraph
-        text:   Text to insert as the new paragraph
-        rich:   If True (default), interpret simple markdown-like formatting natively
+        doc_id:  Google Doc ID
+        anchor:  Text to search for to find the target paragraph
+        text:    Text to insert as the new paragraph
+        rich:    If True (default), interpret simple markdown-like formatting natively
+        suggest: If True, apply as a Suggesting-mode edit instead of a direct edit.
 
     Returns:
         JSON with: ok, inserted_before (matched paragraph preview), at_index
     """
-    result = docs_edit.insert_before(doc_id, anchor, text, rich=rich)
+    result = docs_edit.insert_before(doc_id, anchor, text, rich=rich, suggest=suggest)
     return json.dumps(result, indent=2)
 
 
 @mcp.tool
-def docs_delete_paragraph(doc_id: str, anchor: str) -> str:
+def docs_delete_paragraph(doc_id: str, anchor: str, suggest: bool = False) -> str:
     """
     Delete the paragraph(s) containing `anchor` text.
 
@@ -195,18 +214,19 @@ def docs_delete_paragraph(doc_id: str, anchor: str) -> str:
     If the anchor matches only one paragraph, only that paragraph is deleted.
 
     Args:
-        doc_id: Google Doc ID
-        anchor: Text to search for in paragraphs to delete
+        doc_id:  Google Doc ID
+        anchor:  Text to search for in paragraphs to delete
+        suggest: If True, apply as a Suggesting-mode edit instead of a direct edit.
 
     Returns:
         JSON with: ok, deleted_count, deleted (list of deleted paragraph previews)
     """
-    result = docs_edit.delete_paragraph(doc_id, anchor)
+    result = docs_edit.delete_paragraph(doc_id, anchor, suggest=suggest)
     return json.dumps(result, indent=2)
 
 
 @mcp.tool
-def docs_append(doc_id: str, text: str, rich: bool = True) -> str:
+def docs_append(doc_id: str, text: str, rich: bool = True, suggest: bool = False) -> str:
     """
     Append a new paragraph at the end of a Google Doc.
 
@@ -219,19 +239,20 @@ def docs_append(doc_id: str, text: str, rich: bool = True) -> str:
       - **bold**, *italic*, ***bold italic***
 
     Args:
-        doc_id: Google Doc ID
-        text:   Text to append as the final paragraph
-        rich:   If True (default), interpret simple markdown-like formatting natively
+        doc_id:  Google Doc ID
+        text:    Text to append as the final paragraph
+        rich:    If True (default), interpret simple markdown-like formatting natively
+        suggest: If True, apply as a Suggesting-mode edit instead of a direct edit.
 
     Returns:
         JSON with: ok, appended (text preview), at_index
     """
-    result = docs_edit.append(doc_id, text, rich=rich)
+    result = docs_edit.append(doc_id, text, rich=rich, suggest=suggest)
     return json.dumps(result, indent=2)
 
 
 @mcp.tool
-def docs_batch_replace(doc_id: str, replacements_json: str) -> str:
+def docs_batch_replace(doc_id: str, replacements_json: str, suggest: bool = False) -> str:
     """
     Apply multiple find→replace operations atomically in a single batchUpdate.
 
@@ -247,12 +268,14 @@ def docs_batch_replace(doc_id: str, replacements_json: str) -> str:
                           Each item: {"find": str, "replace": str,
                                       "occurrence": int (default 1, 0=all),
                                       "regex": bool (default false)}
+        suggest:          If True, apply all replacements as Suggesting-mode
+                          edits instead of direct edits.
 
     Returns:
         JSON with: ok, applied (count), changes (list of what changed)
     """
     replacements = json.loads(replacements_json)
-    result = docs_edit.batch_replace(doc_id, replacements)
+    result = docs_edit.batch_replace(doc_id, replacements, suggest=suggest)
     return json.dumps(result, indent=2)
 
 
